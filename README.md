@@ -57,7 +57,21 @@ pip install -r requirements.txt
 python generate_sheets.py          # generate all characters
 python generate_sheets.py example-human-fighter   # generate just one
 python validate.py                 # validate against the spec
+python -m unittest discover tests  # testes unitários do gerador
 ```
+
+> **Retrato, aparência e história (spec 1.1.0):** os campos opcionais
+> `appearance` e `backstory` ficam guardados no JSON para outros conversores,
+> mas a ficha PDF não os imprime (o quadro de personalidade mostra só
+> `personality`). O campo `portrait` aponta para uma imagem PNG/JPEG (caminho
+> relativo ao JSON, ex.: `characters/ashtar-sheran.png` → `"portrait":
+> "ashtar-sheran.png"`), que é encaixada no quadro CHARACTER PORTRAIT. Exige
+> PyMuPDF; se a imagem não existir, o gerador avisa e segue sem ela.
+>
+> Os testes em `tests/` conferem, no template PDF, que nome, nível, tempo,
+> alcance e notas de cada magia caem na mesma linha. Os campos `SPELL NOTES`
+> seguem ordem sequencial (linha N → sufixo N-1), diferente de `SPELL NAME`
+> e demais colunas, que usam `SPELL_ROW_SUFFIX`.
 
 ## A minimal character
 

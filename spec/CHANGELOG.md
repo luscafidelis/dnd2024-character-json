@@ -11,6 +11,20 @@ A document declares the version it targets via the top-level `spec_version` fiel
 Tools should accept any document whose MAJOR matches and whose MINOR is ≤ the
 version they implement.
 
+## 1.1.0 — 2026-11-16
+
+Campos opcionais novos (aditivo; documentos 1.0.0 continuam válidos):
+
+- `appearance` — descrição física, texto livre.
+- `backstory` — história/origem, texto livre.
+- `portrait` — caminho da imagem do retrato (PNG/JPEG), relativo ao arquivo
+  JSON ou absoluto.
+
+O gerador de PDF encaixa `portrait` no quadro CHARACTER PORTRAIT, preservando
+a proporção. `appearance` e `backstory` não são impressos no PDF (o quadro
+PERSONALITY continua só com `personality`); ficam disponíveis para outros
+conversores.
+
 ## 1.0.0 — 2026-06-15
 
 Initial release.

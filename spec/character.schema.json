@@ -4,7 +4,7 @@
   "$comment": "The $id is the stable, versioned identity other tools use to recognise this format.",
   "title": "D&D 2024 Character",
   "description": "A structured, edition-2024 (5.5e) Dungeons & Dragons player character. Designed as a converter-neutral source of truth: one document can be rendered to a fillable PDF, an Obsidian stat block, a VTT import, etc. Homebrew is first-class — species, lineages, feats, and flat skill bonuses are all expressible. SemVer: the 1.x line makes only additive, backwards-compatible changes; a 2.0.0 may restructure.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "object",
   "required": ["spec_version", "name", "species", "classes", "abilities"],
   "additionalProperties": false,
@@ -148,6 +148,21 @@
     "personality": {
       "type": "string",
       "description": "Personality traits / ideals / bonds / flaws, free text."
+    },
+    "appearance": {
+      "type": "string",
+      "description": "(1.1.0) Descrição física do personagem, texto livre. Não é impressa pela ficha PDF.",
+      "examples": ["Alto Elfo de cabelos dourados e olhos azuis penetrantes."]
+    },
+    "backstory": {
+      "type": "string",
+      "description": "(1.1.0) História / origem do personagem, texto livre. Não é impressa pela ficha PDF.",
+      "examples": ["Criado num mosteiro isolado até a noite em que as estrelas falaram com ele."]
+    },
+    "portrait": {
+      "type": "string",
+      "description": "(1.1.0) Caminho para a imagem do retrato (PNG ou JPEG), relativo ao arquivo JSON do personagem (caminho absoluto também é aceito). O gerador de PDF a encaixa no quadro CHARACTER PORTRAIT, preservando a proporção.",
+      "examples": ["ashtar-sheran.png", "retratos/lia.jpg"]
     }
   },
 

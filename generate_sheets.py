@@ -265,6 +265,16 @@ def get_spell_field(base_name, row_index):
     return base_name + suffix
 
 
+def spell_notes_suffix(row_index):
+    """Sufixo do campo SPELL NOTES para a linha visual informada.
+
+    Diferente de SPELL NAME / SPELL LEVEL / CASTING TIME / RANGE (que usam o
+    mapeamento embaralhado de SPELL_ROW_SUFFIX), os campos SPELL NOTES do
+    template estão em ordem sequencial: linha 0 -> "", linha N -> str(N - 1).
+    """
+    return "" if row_index == 0 else str(row_index - 1)
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -317,6 +327,18 @@ def join_features(items):
         else:
             parts.append(desc)
     return "\n\n".join(p for p in parts if p)
+
+
+def resolve_portrait(char, json_path):
+    """Caminho absoluto do retrato (campo `portrait`), resolvido a partir da
+    pasta do arquivo JSON. Retorna None se o campo estiver ausente/vazio."""
+    retrato = (char.get("portrait") or "").strip()
+    if not retrato:
+        return None
+    caminho = Path(retrato)
+    if not caminho.is_absolute():
+        caminho = Path(json_path).resolve().parent / caminho
+    return caminho
 
 
 def validate_character(char):
@@ -550,7 +572,8 @@ def compute_fields(char):
         fields["SPELL NAME" + suffix] = spell.get("name", "")
         fields["CASTING TIME" + suffix] = spell.get("casting_time", "")
         fields["RANGE" + suffix] = spell.get("range", "")
-        fields["SPELL NOTES" + suffix] = spell.get("notes", "")
+        # SPELL NOTES usa ordem sequencial, não SPELL_ROW_SUFFIX (ver spell_notes_suffix)
+        fields["SPELL NOTES" + spell_notes_suffix(row)] = spell.get("notes", "")
 
         # C/R/M checkboxes
         crm = SPELL_CRM_CHECKBOXES.get(row)
@@ -751,7 +774,33 @@ def _set_custom_text_field(writer, field_name, text, max_size=11.0):
             return
 
 
-def fill_pdf(template_path, output_path, text_fields, check_fields):
+PORTRAIT_FIELD = "Character Portrait"
+
+
+def _insert_portrait(data, portrait_path):
+    """Encaixa a imagem do retrato no quadro do campo PORTRAIT_FIELD
+    (preservando a proporção, centralizada) e remove o botão vazio do
+    template. Requer PyMuPDF; sem ele, devolve os bytes inalterados."""
+    try:
+        import fitz
+    except ImportError:
+        print("    ! PyMuPDF não instalado; retrato ignorado")
+        return data
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        for pagina in doc:
+            for widget in list(pagina.widgets()):
+                if widget.field_name == PORTRAIT_FIELD:
+                    quadro = widget.rect
+                    pagina.delete_widget(widget)
+                    pagina.insert_image(quadro, filename=str(portrait_path), keep_proportion=True)
+                    return doc.tobytes(garbage=3, deflate=True)
+        return data
+    finally:
+        doc.close()
+
+
+def fill_pdf(template_path, output_path, text_fields, check_fields, portrait_path=None):
     """Fill the template PDF and write the result.
 
     Uses pypdf's form-fill, which GENERATES the appearance (/AP) stream for
@@ -829,7 +878,12 @@ def fill_pdf(template_path, output_path, text_fields, check_fields):
     import io
     buf = io.BytesIO()
     writer.write(buf)
-    data = _flatten_bytes(buf.getvalue())
+    data = buf.getvalue()
+    # Retrato antes do achatamento: o botão vazio do template é removido e a
+    # imagem entra como conteúdo estático da página.
+    if portrait_path:
+        data = _insert_portrait(data, portrait_path)
+    data = _flatten_bytes(data)
     with open(output_path, "wb") as f:
         f.write(data)
 
@@ -898,9 +952,14 @@ def main():
             warnings = validate_character(char)
             text_fields, check_fields = compute_fields(char)
 
+            portrait = resolve_portrait(char, jf)
+            if portrait is not None and not portrait.is_file():
+                warnings.append("portrait not found: {}".format(portrait))
+                portrait = None
+
             out_name = "{}.pdf".format(jf.stem)
             out_path = output_dir / out_name
-            fill_pdf(str(template_path), str(out_path), text_fields, check_fields)
+            fill_pdf(str(template_path), str(out_path), text_fields, check_fields, portrait)
 
             print("-> {}".format(out_path.name))
             for w in warnings:
