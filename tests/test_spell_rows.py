@@ -55,9 +55,9 @@ class TesteLinhasDeMagia(unittest.TestCase):
         return encontrados[0]
 
     def test_sufixo_das_notas_e_sequencial(self):
-        self.assertEqual(gs.spell_notes_suffix(0), "")
-        self.assertEqual(gs.spell_notes_suffix(1), "0")
-        self.assertEqual(gs.spell_notes_suffix(28), "27")
+        self.assertEqual(gs.sufixo_notas_magia(0), "")
+        self.assertEqual(gs.sufixo_notas_magia(1), "0")
+        self.assertEqual(gs.sufixo_notas_magia(28), "27")
 
     def test_campos_da_mesma_linha_ficam_na_mesma_altura(self):
         for i in range(TOTAL_LINHAS):

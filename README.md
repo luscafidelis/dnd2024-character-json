@@ -66,7 +66,7 @@ python -m unittest discover tests  # testes unitários do gerador
 > `personality`). O campo `portrait` aponta para uma imagem PNG/JPEG (caminho
 > relativo ao JSON, ex.: `characters/ashtar-sheran.png` → `"portrait":
 > "ashtar-sheran.png"`), que é encaixada no quadro CHARACTER PORTRAIT. Exige
-> PyMuPDF; se a imagem não existir, o gerador avisa e segue sem ela.
+> PyMuPDF; se a imagem não existir ou não puder ser lida, o gerador avisa e segue sem ela. Retratos em `characters/` ficam fora do Git (`.gitignore`), como os personagens reais.
 >
 > Os testes em `tests/` conferem, no template PDF, que nome, nível, tempo,
 > alcance e notas de cada magia caem na mesma linha. Os campos `SPELL NOTES`

@@ -9,6 +9,11 @@ CLAUDE_CODE_HANDOFF.md
 # repo). The public repo ships only the example-*.json characters.
 characters/*.json
 !characters/example-*.json
+# Retratos de personagens reais (campo `portrait`) seguem a mesma regra.
+characters/*.png
+characters/*.jpg
+characters/*.jpeg
+!characters/example-*
 
 # One-shot migration tooling + backups (not part of the project)
 _migrate.py

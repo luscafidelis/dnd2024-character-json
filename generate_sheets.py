@@ -34,7 +34,14 @@ Shape, in brief:
   proficiencies{armor[],weapons,tools,languages},
   weapons[], feats[{name,description}], class_features[{name,description}],
   equipment[], coins{}, attunement[],
-  spellcasting{ability}, spell_slots{}, spells[]
+  spellcasting{ability}, spell_slots{}, spells[],
+  personality, appearance, backstory, portrait          (os 3 últimos: spec 1.1.0)
+
+Retrato e textos (spec 1.1.0): `portrait` é o caminho de uma imagem PNG/JPEG,
+relativo ao JSON; ela é encaixada no quadro CHARACTER PORTRAIT (requer
+PyMuPDF). Imagem ausente ou ilegível vira aviso e a ficha é gerada sem ela.
+Só `personality` é impresso; `appearance` e `backstory` ficam no JSON para
+outros conversores.
 
 Derived (not stored): ability modifiers; proficiency bonus (from level if
 omitted); spell save DC / attack bonus (from the spellcasting ability).
@@ -265,7 +272,7 @@ def get_spell_field(base_name, row_index):
     return base_name + suffix
 
 
-def spell_notes_suffix(row_index):
+def sufixo_notas_magia(row_index):
     """Sufixo do campo SPELL NOTES para a linha visual informada.
 
     Diferente de SPELL NAME / SPELL LEVEL / CASTING TIME / RANGE (que usam o
@@ -329,7 +336,7 @@ def join_features(items):
     return "\n\n".join(p for p in parts if p)
 
 
-def resolve_portrait(char, json_path):
+def resolver_retrato(char, caminho_json):
     """Caminho absoluto do retrato (campo `portrait`), resolvido a partir da
     pasta do arquivo JSON. Retorna None se o campo estiver ausente/vazio."""
     retrato = (char.get("portrait") or "").strip()
@@ -337,8 +344,17 @@ def resolve_portrait(char, json_path):
         return None
     caminho = Path(retrato)
     if not caminho.is_absolute():
-        caminho = Path(json_path).resolve().parent / caminho
+        caminho = Path(caminho_json).resolve().parent / caminho
     return caminho
+
+
+def preparar_retrato(char, caminho_json):
+    """Retorna (caminho_do_retrato_ou_None, avisos). Um retrato declarado mas
+    inexistente vira aviso e é ignorado, para a ficha ser gerada sem ele."""
+    caminho = resolver_retrato(char, caminho_json)
+    if caminho is not None and not caminho.is_file():
+        return None, ["portrait not found: {}".format(caminho)]
+    return caminho, []
 
 
 def validate_character(char):
@@ -572,8 +588,8 @@ def compute_fields(char):
         fields["SPELL NAME" + suffix] = spell.get("name", "")
         fields["CASTING TIME" + suffix] = spell.get("casting_time", "")
         fields["RANGE" + suffix] = spell.get("range", "")
-        # SPELL NOTES usa ordem sequencial, não SPELL_ROW_SUFFIX (ver spell_notes_suffix)
-        fields["SPELL NOTES" + spell_notes_suffix(row)] = spell.get("notes", "")
+        # SPELL NOTES usa ordem sequencial, não SPELL_ROW_SUFFIX (ver sufixo_notas_magia)
+        fields["SPELL NOTES" + sufixo_notas_magia(row)] = spell.get("notes", "")
 
         # C/R/M checkboxes
         crm = SPELL_CRM_CHECKBOXES.get(row)
@@ -774,33 +790,28 @@ def _set_custom_text_field(writer, field_name, text, max_size=11.0):
             return
 
 
-PORTRAIT_FIELD = "Character Portrait"
+CAMPO_RETRATO = "Character Portrait"
 
 
-def _insert_portrait(data, portrait_path):
-    """Encaixa a imagem do retrato no quadro do campo PORTRAIT_FIELD
-    (preservando a proporção, centralizada) e remove o botão vazio do
-    template. Requer PyMuPDF; sem ele, devolve os bytes inalterados."""
-    try:
-        import fitz
-    except ImportError:
-        print("    ! PyMuPDF não instalado; retrato ignorado")
-        return data
-    doc = fitz.open(stream=data, filetype="pdf")
-    try:
-        for pagina in doc:
-            for widget in list(pagina.widgets()):
-                if widget.field_name == PORTRAIT_FIELD:
-                    quadro = widget.rect
-                    pagina.delete_widget(widget)
-                    pagina.insert_image(quadro, filename=str(portrait_path), keep_proportion=True)
-                    return doc.tobytes(garbage=3, deflate=True)
-        return data
-    finally:
-        doc.close()
+def _inserir_retrato(doc, caminho_retrato):
+    """Encaixa a imagem no quadro do campo CAMPO_RETRATO de um documento
+    PyMuPDF já aberto (preservando a proporção, centralizada) e remove o botão
+    vazio do template. Retorna a lista de avisos; nunca levanta exceção, para
+    que uma imagem ruim não impeça a geração da ficha."""
+    for pagina in doc:
+        for widget in list(pagina.widgets()):
+            if widget.field_name != CAMPO_RETRATO:
+                continue
+            try:
+                pagina.insert_image(widget.rect, filename=str(caminho_retrato), keep_proportion=True)
+            except Exception as erro:
+                return ["portrait could not be drawn ({}): {}".format(caminho_retrato, erro)]
+            pagina.delete_widget(widget)
+            return []
+    return ["portrait field '{}' not found in template".format(CAMPO_RETRATO)]
 
 
-def fill_pdf(template_path, output_path, text_fields, check_fields, portrait_path=None):
+def fill_pdf(template_path, output_path, text_fields, check_fields, caminho_retrato=None):
     """Fill the template PDF and write the result.
 
     Uses pypdf's form-fill, which GENERATES the appearance (/AP) stream for
@@ -810,6 +821,9 @@ def fill_pdf(template_path, output_path, text_fields, check_fields, portrait_pat
 
     A checkbox value of "P" or "E" (used for skill proficiency / expertise)
     is checked like any other box, then has its tick re-drawn as that letter.
+
+    caminho_retrato (opcional): imagem encaixada no quadro de retrato.
+    Retorna a lista de avisos (ex.: retrato que não pôde ser desenhado).
     """
     from pypdf.generic import NameObject, BooleanObject, NumberObject, TextStringObject
 
@@ -878,32 +892,34 @@ def fill_pdf(template_path, output_path, text_fields, check_fields, portrait_pat
     import io
     buf = io.BytesIO()
     writer.write(buf)
-    data = buf.getvalue()
-    # Retrato antes do achatamento: o botão vazio do template é removido e a
-    # imagem entra como conteúdo estático da página.
-    if portrait_path:
-        data = _insert_portrait(data, portrait_path)
-    data = _flatten_bytes(data)
+    data, avisos = _flatten_bytes(buf.getvalue(), caminho_retrato)
     with open(output_path, "wb") as f:
         f.write(data)
+    return avisos
 
 
-def _flatten_bytes(data):
+def _flatten_bytes(data, caminho_retrato=None):
     """Return PDF bytes with form fields + annotations baked into static page
     content (via PyMuPDF). Returns the input unchanged if PyMuPDF is missing —
-    the un-flattened file still works in appearance-honoring viewers like Adobe."""
+    the un-flattened file still works in appearance-honoring viewers like Adobe.
+
+    Na mesma passada do PyMuPDF (uma única abertura/serialização do PDF),
+    insere o retrato antes do achatamento. Retorna (bytes, avisos)."""
     try:
         import fitz
     except ImportError:
-        return data
+        avisos = ["PyMuPDF not installed; portrait skipped"] if caminho_retrato else []
+        return data, avisos
     doc = fitz.open(stream=data, filetype="pdf")
     try:
-        doc.bake(widgets=True, annots=True)
-    except TypeError:
-        doc.bake()
-    out = doc.tobytes(garbage=3, deflate=True)
-    doc.close()
-    return out
+        avisos = _inserir_retrato(doc, caminho_retrato) if caminho_retrato else []
+        try:
+            doc.bake(widgets=True, annots=True)
+        except TypeError:
+            doc.bake()
+        return doc.tobytes(garbage=3, deflate=True), avisos
+    finally:
+        doc.close()
 
 
 def main():
@@ -952,14 +968,13 @@ def main():
             warnings = validate_character(char)
             text_fields, check_fields = compute_fields(char)
 
-            portrait = resolve_portrait(char, jf)
-            if portrait is not None and not portrait.is_file():
-                warnings.append("portrait not found: {}".format(portrait))
-                portrait = None
+            caminho_retrato, avisos_retrato = preparar_retrato(char, jf)
+            warnings += avisos_retrato
 
             out_name = "{}.pdf".format(jf.stem)
             out_path = output_dir / out_name
-            fill_pdf(str(template_path), str(out_path), text_fields, check_fields, portrait)
+            warnings += fill_pdf(str(template_path), str(out_path), text_fields,
+                                 check_fields, caminho_retrato)
 
             print("-> {}".format(out_path.name))
             for w in warnings:

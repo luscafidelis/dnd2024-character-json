@@ -37,17 +37,17 @@ class TesteTextoDePersonalidade(unittest.TestCase):
 
 class TesteResolucaoDoRetrato(unittest.TestCase):
     def test_sem_retrato_retorna_none(self):
-        self.assertIsNone(gs.resolve_portrait(personagem_minimo(), "x/char.json"))
+        self.assertIsNone(gs.resolver_retrato(personagem_minimo(), "x/char.json"))
 
     def test_caminho_relativo_ao_json(self):
         with tempfile.TemporaryDirectory() as pasta:
-            json_path = Path(pasta) / "char.json"
-            resolvido = gs.resolve_portrait(personagem_minimo(portrait="img/r.png"), json_path)
-            self.assertEqual(resolvido, json_path.resolve().parent / "img" / "r.png")
+            caminho_json = Path(pasta) / "char.json"
+            resolvido = gs.resolver_retrato(personagem_minimo(portrait="img/r.png"), caminho_json)
+            self.assertEqual(resolvido, caminho_json.resolve().parent / "img" / "r.png")
 
     def test_caminho_absoluto_e_mantido(self):
         absoluto = Path(tempfile.gettempdir()).resolve() / "r.png"
-        resolvido = gs.resolve_portrait(personagem_minimo(portrait=str(absoluto)), "x/char.json")
+        resolvido = gs.resolver_retrato(personagem_minimo(portrait=str(absoluto)), "x/char.json")
         self.assertEqual(resolvido, absoluto)
 
 
@@ -76,7 +76,7 @@ class TesteRetratoNoPdf(unittest.TestCase):
         import fitz
         modelo = fitz.open(str(TEMPLATE))
         quadro = next(w.rect for p in modelo for w in p.widgets()
-                      if w.field_name == gs.PORTRAIT_FIELD)
+                      if w.field_name == gs.CAMPO_RETRATO)
         modelo.close()
         with tempfile.TemporaryDirectory() as pasta:
             png = Path(pasta) / "r.png"
@@ -94,10 +94,51 @@ class TesteRetratoNoPdf(unittest.TestCase):
             # proporção 40x60 preservada
             self.assertAlmostEqual(area.width / area.height, 40 / 60, places=2)
 
-    def test_retrato_inexistente_gera_aviso_e_nao_quebra(self):
+    def test_retrato_ilegivel_gera_aviso_e_ficha_sai_sem_ele(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            ruim = Path(pasta) / "ruim.png"
+            ruim.write_bytes(b"isto nao e uma imagem")
+            saida = Path(pasta) / "saida.pdf"
+            campos, checks = gs.compute_fields(personagem_minimo())
+            avisos = gs.fill_pdf(str(TEMPLATE), str(saida), campos, checks, ruim)
+            self.assertEqual(len(avisos), 1)
+            self.assertIn("portrait could not be drawn", avisos[0])
+            self.assertTrue(saida.is_file() and saida.stat().st_size > 0)
+
+    def test_sem_retrato_fill_pdf_nao_gera_avisos(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            campos, checks = gs.compute_fields(personagem_minimo())
+            self.assertEqual(gs.fill_pdf(str(TEMPLATE), str(Path(pasta) / "s.pdf"),
+                                         campos, checks), [])
+
+
+class TestePreparacaoDoRetrato(unittest.TestCase):
+    def test_retrato_inexistente_vira_aviso_e_e_ignorado(self):
         char = personagem_minimo(portrait="nao-existe.png")
-        caminho = gs.resolve_portrait(char, RAIZ / "characters" / "x.json")
-        self.assertFalse(caminho.is_file())
+        caminho, avisos = gs.preparar_retrato(char, RAIZ / "characters" / "x.json")
+        self.assertIsNone(caminho)
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("portrait not found", avisos[0])
+
+    def test_retrato_existente_e_repassado_sem_aviso(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            (Path(pasta) / "r.png").write_bytes(b"x")
+            caminho, avisos = gs.preparar_retrato(personagem_minimo(portrait="r.png"),
+                                                  Path(pasta) / "c.json")
+            self.assertEqual(caminho, (Path(pasta) / "r.png").resolve())
+            self.assertEqual(avisos, [])
+
+    def test_sem_retrato_nao_gera_aviso(self):
+        self.assertEqual(gs.preparar_retrato(personagem_minimo(), "x.json"), (None, []))
+
+
+class TesteSemPyMuPDF(unittest.TestCase):
+    def test_retrato_vira_aviso_quando_fitz_nao_existe(self):
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {"fitz": None}):
+            dados, avisos = gs._flatten_bytes(b"%PDF-1.4", "r.png")
+        self.assertEqual(dados, b"%PDF-1.4")
+        self.assertEqual(avisos, ["PyMuPDF not installed; portrait skipped"])
 
 
 if __name__ == "__main__":
